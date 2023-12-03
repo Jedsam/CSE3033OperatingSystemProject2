@@ -1,9 +1,90 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
- 
+#include <sys/wait.h>
+#include <dirent.h>
+#include <string.h>
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
- 
+typedef struct myArray{
+    int length;
+    int *lineCountList;
+    char **foundStrings;
+}ArrayWithLength;
+
+ArrayWithLength* findStringInString(char *stringToSearchInside, char* stringToSearchWith){
+    const char deliminator = ' ';
+    char *currentStr = strtok(stringToSearchInside, &deliminator);
+    ArrayWithLength *resultArray = calloc(1, sizeof(ArrayWithLength));
+    int i = 0;
+    int currentLength;
+    while(currentStr){
+        if(strcmp(currentStr, stringToSearchWith) == 0){
+            currentLength = resultArray -> length;
+            resultArray -> lineCountList[currentLength] = i;
+            strcpy(resultArray -> foundStrings[currentLength], currentStr);
+            resultArray -> length++;   
+        }
+        i++;
+        currentStr = strtok(NULL, &deliminator);
+    }
+    printf("resultArrayLength : %d\n", resultArray -> length);
+    return resultArray;
+}
+char* getDirectoryString(char *directoryPath){
+    struct dirent *directoryInformation;
+    char *tempString, *resultString;
+    DIR *currentDirectory = opendir(directoryPath);
+    if(currentDirectory == NULL){
+        perror("Could not find the directory of the PATH");
+        return 0;
+    }
+    if(directoryInformation = readdir(currentDirectory)) {
+        resultString = calloc(128,sizeof(char));
+        strcpy(resultString, directoryInformation -> d_name);
+    }
+    while((directoryInformation = readdir(currentDirectory))){
+        tempString = directoryInformation -> d_name;
+        resultString = strcat(resultString, tempString);
+        resultString = strcat(resultString, " ");
+    }
+    return resultString;
+}
+char **getTokenList(char *fullString, const char *deliminator){
+    char **tokenList = calloc(100,sizeof(char*));
+    char *tempToken = strtok(fullString,deliminator);
+    int i;
+    for(i = 0; i < 100 && tempToken; i++){
+        tokenList[i] = tempToken;
+        tempToken = strtok(NULL, deliminator);
+    }
+    return tokenList;
+}
+char *findCommand(char* commandName){
+    const char deliminator = ':';
+    char *currentToken, *currentDirectoryString, *pathString;
+    char **tokenList;
+    pathString = getenv("PATH");
+    ArrayWithLength *currentArrayWithLength;
+    tokenList = getTokenList(pathString, &deliminator);
+    int i = 0;
+    currentToken = tokenList[i];
+    currentDirectoryString = getDirectoryString(currentToken);
+    currentArrayWithLength = findStringInString(currentDirectoryString, commandName);
+
+    while (currentArrayWithLength && (currentArrayWithLength->length == 0) && currentToken){
+        i++;
+        currentToken = tokenList[i];
+        currentDirectoryString = getDirectoryString(currentToken);
+        currentArrayWithLength = findStringInString(currentDirectoryString, commandName);
+    } 
+    if(currentArrayWithLength->length){
+        return currentArrayWithLength->foundStrings[0];
+    }
+    else{
+        return 0;
+    } 
+}
 /* The setup function below will not return any value, but it will just: read
 in the next command line; separate it into distinct arguments (using blanks as
 delimiters), and set the args array entries to point to the beginning of what
@@ -83,16 +164,31 @@ int main(void)
             char inputBuffer[MAX_LINE]; /*buffer to hold command entered */
             int background; /* equals 1 if a command is followed by '&' */
             char *args[MAX_LINE/2 + 1]; /*command line arguments */
+            pid_t childpid;
             while (1){
                         background = 0;
                         printf("myshell: ");
                         /*setup() calls exit() when Control-D is entered */
                         setup(inputBuffer, args, &background);
-                       
+                        childpid = fork();
+                        if (childpid == -1){
+                            printf("Error creating fork for executing the command");
+                        }
+                        else if(childpid == 0){
+                            char *commandDirectory = findCommand(args[0]);
+                            if(!commandDirectory){
+                                printf("Could not find the command!\n");
+                                exit(1); /*Command not found error*/
+                            }
+                            printf("%s\n", commandDirectory);
+                            execv(args[0],&args[0]);
+                        }
+                        
                         /** the steps are:
                         (1) fork a child process using fork()
                         (2) the child process will invoke execv()
 						(3) if background == 0, the parent will wait,
                         otherwise it will invoke the setup() function again. */
             }
+    
 }
