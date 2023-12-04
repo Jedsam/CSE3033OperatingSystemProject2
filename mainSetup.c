@@ -12,18 +12,26 @@ typedef struct myArray{
     char **foundStrings;
 }ArrayWithLength;
 
+    const int MAX_FOUND_STRING = 100;
 ArrayWithLength* findStringInString(char *stringToSearchInside, char* stringToSearchWith){
     const char deliminator = ' ';
+    printf("here");
     char *currentStr = strtok(stringToSearchInside, &deliminator);
-    ArrayWithLength *resultArray = calloc(1, sizeof(ArrayWithLength));
+    
+    ArrayWithLength *resultArray = (ArrayWithLength*)calloc(1, sizeof(ArrayWithLength));
+    resultArray -> lineCountList = (int*)calloc(MAX_FOUND_STRING, sizeof(int));
+    resultArray -> foundStrings = (char**)calloc(MAX_FOUND_STRING, sizeof(char*));
     int i = 0;
-    int currentLength;
+    int currentLength = 0;
     while(currentStr){
+        printf("hi currentStr :%s ,stringTo:%s\n",currentStr,stringToSearchWith);
         if(strcmp(currentStr, stringToSearchWith) == 0){
+            printf("in\n");
             currentLength = resultArray -> length;
             resultArray -> lineCountList[currentLength] = i;
             strcpy(resultArray -> foundStrings[currentLength], currentStr);
             resultArray -> length++;   
+            currentLength++;
         }
         i++;
         currentStr = strtok(NULL, &deliminator);
@@ -40,7 +48,7 @@ char* getDirectoryString(char *directoryPath){
         return 0;
     }
     if(directoryInformation = readdir(currentDirectory)) {
-        resultString = calloc(128,sizeof(char));
+        resultString = (char*)calloc(128,sizeof(char));
         strcpy(resultString, directoryInformation -> d_name);
     }
     while((directoryInformation = readdir(currentDirectory))){
@@ -51,7 +59,7 @@ char* getDirectoryString(char *directoryPath){
     return resultString;
 }
 char **getTokenList(char *fullString, const char *deliminator){
-    char **tokenList = calloc(100,sizeof(char*));
+    char **tokenList = (char**)calloc(100,sizeof(char*));
     char *tempToken = strtok(fullString,deliminator);
     int i;
     for(i = 0; i < 100 && tempToken; i++){
@@ -75,7 +83,9 @@ char *findCommand(char* commandName){
     while (currentArrayWithLength && (currentArrayWithLength->length == 0) && currentToken){
         i++;
         currentToken = tokenList[i];
+        printf("\n%d:token:%s\n",i, currentToken);
         currentDirectoryString = getDirectoryString(currentToken);
+        printf("directoryStringAcquired!\n");
         currentArrayWithLength = findStringInString(currentDirectoryString, commandName);
     } 
     if(currentArrayWithLength->length){
@@ -170,12 +180,13 @@ int main(void)
                         printf("myshell: ");
                         /*setup() calls exit() when Control-D is entered */
                         setup(inputBuffer, args, &background);
+                        char *commandDirectory = findCommand(args[0]);
                         childpid = fork();
                         if (childpid == -1){
                             printf("Error creating fork for executing the command");
                         }
                         else if(childpid == 0){
-                            char *commandDirectory = findCommand(args[0]);
+                            
                             if(!commandDirectory){
                                 printf("Could not find the command!\n");
                                 exit(1); /*Command not found error*/
