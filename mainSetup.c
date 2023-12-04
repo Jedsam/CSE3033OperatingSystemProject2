@@ -94,15 +94,21 @@ char *findCommand(char* commandName){
     tokenList = getTokenList(pathString, &deliminator);
     int i = 0;
     currentToken = tokenList[i];
+    if(currentToken == 0){
+        printf("No path found!");
+        exit(1);
+    }
     currentDirectoryString = getDirectoryString(currentToken);
     currentArrayWithLength = findStringInString(currentDirectoryString, commandName);
     free(currentDirectoryString);
     while (currentArrayWithLength && (currentArrayWithLength->length == 0) && currentToken){
         i++;
         currentToken = tokenList[i];
-        currentDirectoryString = getDirectoryString(currentToken);
-        currentArrayWithLength = findStringInString(currentDirectoryString, commandName);
-        free(currentDirectoryString);
+        if(currentToken){
+            currentDirectoryString = getDirectoryString(currentToken);
+            currentArrayWithLength = findStringInString(currentDirectoryString, commandName);
+            free(currentDirectoryString);
+        }
     } 
     free(pathString);
     if(currentArrayWithLength->length){
