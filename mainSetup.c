@@ -11,22 +11,26 @@ typedef struct myArray{
     int *lineCountList;
     char **foundStrings;
 }ArrayWithLength;
-
+ArrayWithLength *createArrayWithLength(int length){
+    ArrayWithLength *resultArray = (ArrayWithLength*)calloc(1, sizeof(ArrayWithLength));
+    resultArray -> lineCountList = (int*)calloc(length, sizeof(int));
+    resultArray -> foundStrings = (char**)calloc(length, sizeof(char*));
+    int i;
+    for(i = 0; i < length; i++){
+        resultArray -> foundStrings[i] = (char*)calloc(MAX_LINE, sizeof(char));
+    }
+    return resultArray;
+}
     const int MAX_FOUND_STRING = 100;
 ArrayWithLength* findStringInString(char *stringToSearchInside, char* stringToSearchWith){
     const char deliminator = ' ';
-    printf("here");
     char *currentStr = strtok(stringToSearchInside, &deliminator);
     
-    ArrayWithLength *resultArray = (ArrayWithLength*)calloc(1, sizeof(ArrayWithLength));
-    resultArray -> lineCountList = (int*)calloc(MAX_FOUND_STRING, sizeof(int));
-    resultArray -> foundStrings = (char**)calloc(MAX_FOUND_STRING, sizeof(char*));
+    ArrayWithLength *resultArray = createArrayWithLength(MAX_FOUND_STRING);
     int i = 0;
     int currentLength = 0;
     while(currentStr){
-        printf("hi currentStr :%s ,stringTo:%s\n",currentStr,stringToSearchWith);
         if(strcmp(currentStr, stringToSearchWith) == 0){
-            printf("in\n");
             currentLength = resultArray -> length;
             resultArray -> lineCountList[currentLength] = i;
             strcpy(resultArray -> foundStrings[currentLength], currentStr);
@@ -36,7 +40,6 @@ ArrayWithLength* findStringInString(char *stringToSearchInside, char* stringToSe
         i++;
         currentStr = strtok(NULL, &deliminator);
     }
-    printf("resultArrayLength : %d\n", resultArray -> length);
     return resultArray;
 }
 char* getDirectoryString(char *directoryPath){
@@ -48,14 +51,15 @@ char* getDirectoryString(char *directoryPath){
         return 0;
     }
     if(directoryInformation = readdir(currentDirectory)) {
-        resultString = (char*)calloc(128,sizeof(char));
+        resultString = (char*)calloc(100000,sizeof(char));
         strcpy(resultString, directoryInformation -> d_name);
     }
     while((directoryInformation = readdir(currentDirectory))){
         tempString = directoryInformation -> d_name;
-        resultString = strcat(resultString, tempString);
-        resultString = strcat(resultString, " ");
+        strcat(resultString, tempString);
+        strcat(resultString, " ");
     }
+    closedir(currentDirectory);
     return resultString;
 }
 char **getTokenList(char *fullString, const char *deliminator){
@@ -68,28 +72,35 @@ char **getTokenList(char *fullString, const char *deliminator){
     }
     return tokenList;
 }
+char *copyString(char* strToCopy){
+    char *returnStr = calloc(1,strlen(strToCopy));
+    strcpy(returnStr, strToCopy);
+    return returnStr;
+}
 char *findCommand(char* commandName){
     const char deliminator = ':';
     char *currentToken, *currentDirectoryString, *pathString;
     char **tokenList;
     pathString = getenv("PATH");
+    pathString = copyString(pathString);
     ArrayWithLength *currentArrayWithLength;
     tokenList = getTokenList(pathString, &deliminator);
     int i = 0;
     currentToken = tokenList[i];
     currentDirectoryString = getDirectoryString(currentToken);
     currentArrayWithLength = findStringInString(currentDirectoryString, commandName);
-
+    free(currentDirectoryString);
     while (currentArrayWithLength && (currentArrayWithLength->length == 0) && currentToken){
         i++;
         currentToken = tokenList[i];
-        printf("\n%d:token:%s\n",i, currentToken);
         currentDirectoryString = getDirectoryString(currentToken);
-        printf("directoryStringAcquired!\n");
         currentArrayWithLength = findStringInString(currentDirectoryString, commandName);
+        free(currentDirectoryString);
     } 
+    free(pathString);
     if(currentArrayWithLength->length){
-        return currentArrayWithLength->foundStrings[0];
+        strcat(currentToken, "/");
+        return strcat(currentToken, currentArrayWithLength->foundStrings[0]);
     }
     else{
         return 0;
@@ -191,8 +202,7 @@ int main(void)
                                 printf("Could not find the command!\n");
                                 exit(1); /*Command not found error*/
                             }
-                            printf("%s\n", commandDirectory);
-                            execv(args[0],&args[0]);
+                            execv(commandDirectory,&args[0]);
                         }
                         
                         /** the steps are:
