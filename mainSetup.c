@@ -6,11 +6,18 @@
 #include <dirent.h>
 #include <string.h>
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
+#define MAX_COMMAND 1000
+#define MAX_FOUND_STRING 100
+
+
 typedef struct myArray{
     int length;
     int *lineCountList;
     char **foundStrings;
 }ArrayWithLength;
+
+
+
 ArrayWithLength *createArrayWithLength(int length){
     ArrayWithLength *resultArray = (ArrayWithLength*)calloc(1, sizeof(ArrayWithLength));
     resultArray -> lineCountList = (int*)calloc(length, sizeof(int));
@@ -21,7 +28,7 @@ ArrayWithLength *createArrayWithLength(int length){
     }
     return resultArray;
 }
-    const int MAX_FOUND_STRING = 100;
+
 ArrayWithLength* findStringInString(char *stringToSearchInside, char* stringToSearchWith){
     const char deliminator = ' ';
     char *currentStr = strtok(stringToSearchInside, &deliminator);
@@ -179,32 +186,66 @@ void setup(char inputBuffer[], char *args[],int *background)
 	for (i = 0; i <= ct; i++)
 		printf("args %d = %s\n",i,args[i]);
 } /* end of setup routine */
- 
+ int checkPID(pid_t *childpidList, int length){
+    int i;
+    int status;
+    for(i = 0; i < length && childpidList[i]; i++){
+
+        if(!waitpid(childpidList[i],&status,WNOHANG)){
+            return 1;
+        }
+    }
+    return 0;
+ }
 int main(void)
 {
             char inputBuffer[MAX_LINE]; /*buffer to hold command entered */
             int background; /* equals 1 if a command is followed by '&' */
             char *args[MAX_LINE/2 + 1]; /*command line arguments */
             pid_t childpid;
+            pid_t childpidList[MAX_COMMAND];
+            int i = 0;
+            int status;
             while (1){
                         background = 0;
                         printf("myshell: ");
                         /*setup() calls exit() when Control-D is entered */
                         setup(inputBuffer, args, &background);
-                        char *commandDirectory = findCommand(args[0]);
-                        childpid = fork();
-                        if (childpid == -1){
-                            printf("Error creating fork for executing the command");
-                        }
-                        else if(childpid == 0){
-                            
-                            if(!commandDirectory){
-                                printf("Could not find the command!\n");
-                                exit(1); /*Command not found error*/
+                        if(strcmp(args[0], "exit") == 0){
+                            if(checkPID(childpidList, MAX_COMMAND)){
+                                perror("There are background processes still running and do not terminate the shell process unless the user terminates all background processes.");
                             }
-                            execv(commandDirectory,&args[0]);
+                            else {
+                                exit(0);
+                            }
                         }
-                        
+                        else if(strcmp(args[0], "bookmark") == 0){
+
+                        }
+                        else if(strcmp(args[0], "search") == 0){
+
+                        }
+                        else{
+                            char *commandDirectory = findCommand(args[0]);
+                            childpid = fork();
+                            if (childpid == -1){
+                                printf("Error creating fork for executing the command");
+                            }
+                            else if(childpid == 0){
+                                
+                                if(!commandDirectory){
+                                    printf("Could not find the command!\n");
+                                    exit(1); /*Command not found error*/
+                                }
+                                execv(commandDirectory,&args[0]);
+                            }
+                            else if(background == 0){
+                                waitpid(childpid, &status, 0);
+                            }
+                            childpidList[i] = childpid;
+                            childpid = 0;
+                            i++;
+                        }
                         /** the steps are:
                         (1) fork a child process using fork()
                         (2) the child process will invoke execv()
