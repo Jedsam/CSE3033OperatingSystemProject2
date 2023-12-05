@@ -7,48 +7,37 @@
 #include <string.h>
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
 #define MAX_COMMAND 1000
-#define MAX_FOUND_STRING 100
+#define MAX_FOUND_STRING 1000
+#define MAX_PATH 128
 
+typedef struct stringDynam{
+    int maxSize;
+    int currentSize;
+    char *strPtr;
+}DynamicString;
 
-typedef struct myArray{
-    int length;
-    int *lineCountList;
-    char **foundStrings;
-}ArrayWithLength;
-
-
-
-ArrayWithLength *createArrayWithLength(int length){
-    ArrayWithLength *resultArray = (ArrayWithLength*)calloc(1, sizeof(ArrayWithLength));
-    resultArray -> lineCountList = (int*)calloc(length, sizeof(int));
-    resultArray -> foundStrings = (char**)calloc(length, sizeof(char*));
-    int i;
-    for(i = 0; i < length; i++){
-        resultArray -> foundStrings[i] = (char*)calloc(MAX_LINE, sizeof(char));
+DynamicString *createDynamicString(int size){
+    DynamicString *newStr = (DynamicString*) malloc(sizeof(DynamicString));
+    newStr -> maxSize = size;
+    newStr -> currentSize = 0;
+    newStr -> strPtr = calloc(sizeof(char), size);
+}
+DynamicString *createDynamicStringWithStr(char *Str){
+    DynamicString *newStr = (DynamicString*) malloc(sizeof(DynamicString));
+    newStr -> currentSize = strlen(Str);
+    newStr -> maxSize = newStr -> currentSize;
+}
+void freeDynamicString(DynamicString *dyStr){
+    free(dyStr-> strPtr);
+    free(dyStr);
+}
+void addChar(DynamicString *dyStr, char addChar){
+    if(dyStr -> currentSize + 1 >= dyStr -> maxSize){
+        dyStr -> maxSize *= 2 + 1;
+        dyStr -> strPtr = realloc(dyStr ->strPtr,dyStr -> maxSize);
     }
-    return resultArray;
 }
 
-ArrayWithLength* findStringInString(char *stringToSearchInside, char* stringToSearchWith){
-    const char deliminator = ' ';
-    char *currentStr = strtok(stringToSearchInside, &deliminator);
-    
-    ArrayWithLength *resultArray = createArrayWithLength(MAX_FOUND_STRING);
-    int i = 0;
-    int currentLength = 0;
-    while(currentStr){
-        if(strcmp(currentStr, stringToSearchWith) == 0){
-            currentLength = resultArray -> length;
-            resultArray -> lineCountList[currentLength] = i;
-            strcpy(resultArray -> foundStrings[currentLength], currentStr);
-            resultArray -> length++;   
-            currentLength++;
-        }
-        i++;
-        currentStr = strtok(NULL, &deliminator);
-    }
-    return resultArray;
-}
 char* getDirectoryString(char *directoryPath){
     struct dirent *directoryInformation;
     char *tempString, *resultString;
@@ -84,13 +73,34 @@ char *copyString(char* strToCopy){
     strcpy(returnStr, strToCopy);
     return returnStr;
 }
-char *findCommand(char* commandName){
+int findStrInsideStr(char *searchedString, char* stringToSearchWith){
+    int i = 0;
+    int length = strlen(stringToSearchWith);
+    char current = searchedString[i];
+    while(current){
+        if(strncmp(searchedString + i, stringToSearchWith, length) == 0 && 
+        (searchedString[i + length] == ' ' || searchedString[i + length] == 0)){
+            return 1;
+        }
+        i++;
+        current = searchedString[i];
+    }
+    return 0;
+}
+char *copyStringPlusSpace(char *strToCopy){
+    int length = strlen(strToCopy);
+    char *returnStr = calloc(1, length + 1);
+    returnStr[0] = ' ';
+    strcpy(returnStr + 1, strToCopy);
+    return returnStr;
+}
+char *findCommand(char* commandNameOrigin){
+    char *commandName = copyStringPlusSpace(commandNameOrigin);
     const char deliminator = ':';
-    char *currentToken, *currentDirectoryString, *pathString;
+    char *currentToken, *currentDirectoryNameString, *pathString;
     char **tokenList;
     pathString = getenv("PATH");
     pathString = copyString(pathString);
-    ArrayWithLength *currentArrayWithLength;
     tokenList = getTokenList(pathString, &deliminator);
     int i = 0;
     currentToken = tokenList[i];
@@ -98,22 +108,23 @@ char *findCommand(char* commandName){
         printf("No path found!");
         exit(1);
     }
-    currentDirectoryString = getDirectoryString(currentToken);
-    currentArrayWithLength = findStringInString(currentDirectoryString, commandName);
-    free(currentDirectoryString);
-    while (currentArrayWithLength && (currentArrayWithLength->length == 0) && currentToken){
+    currentDirectoryNameString = getDirectoryString(currentToken);
+    int isFound = findStrInsideStr(currentDirectoryNameString, commandName);
+    free(currentDirectoryNameString);
+    while (!isFound && currentToken){
         i++;
         currentToken = tokenList[i];
         if(currentToken){
-            currentDirectoryString = getDirectoryString(currentToken);
-            currentArrayWithLength = findStringInString(currentDirectoryString, commandName);
-            free(currentDirectoryString);
+            currentDirectoryNameString = getDirectoryString(currentToken);
+            isFound = findStrInsideStr(currentDirectoryNameString, commandName);
+            free(currentDirectoryNameString);
         }
     } 
     free(pathString);
-    if(currentArrayWithLength->length){
+
+    if(isFound){
         strcat(currentToken, "/");
-        return strcat(currentToken, currentArrayWithLength->foundStrings[0]);
+        return strcat(currentToken, commandNameOrigin);
     }
     else{
         return 0;
@@ -203,6 +214,98 @@ void setup(char inputBuffer[], char *args[],int *background)
     }
     return 0;
  }
+char *getWholeFileString(char *fileName){
+    FILE *tempFile = fopen(fileName, "r");
+    
+    DynamicString *fileOutput = createDynamicString(100); 
+    char current = fgetc(tempFile);
+    while(current != EOF){
+        addChar(fileOutput, current);
+        current = fgetc(tempFile);
+    }
+    
+    fclose(tempFile);
+    char *temp = fileOutput -> strPtr;
+    free(fileOutput);
+    return temp;
+}
+int isDir(char *fileName){
+    DIR *directory = opendir(fileName);
+    if(directory){
+        closedir(directory);
+        return 1;
+    }
+    return 0;
+}
+char *combineTwoStringPath(char *str1, char *str2){
+    char *str3 = calloc(strlen(str1) + strlen(str2) + 1, sizeof(char));
+    strcat(str3, str2);
+    strcat(str3, "/");
+    strcpy(str3, str1);
+    return str3;
+}
+void searchString(char *searchedString, char *stringToSearchWith, char *pathName){
+    int i = 0;
+    int lineCounter = 0;
+    DynamicString *lineString = createDynamicString(100);
+    int length = strlen(stringToSearchWith);
+    char *tempPointer;
+    char current = searchedString[i];
+    while(current){
+        if(current == '\n'){
+            lineCounter++;
+            free(lineString -> strPtr);
+            lineString -> strPtr = calloc(100,sizeof(char));
+        }
+        else{
+            addChar(lineString, current);
+        }
+        if(strncmp(searchedString + i, stringToSearchWith, length) == 0){
+            printf("%d: %s -> %s", lineCounter, pathName, lineString ->strPtr);
+        }
+        i++;
+        current = searchedString[i];
+    }
+}
+void *findStringInFile(char *directoryPathString, char *searchStr, int isRecursive){
+    char *fileString;
+    char *directoryString = getDirectoryString(directoryPathString);
+    const char deliminator = ' ';
+    char **tokenList = getTokenList(directoryString, &deliminator);
+    int i = 0;
+    char *currentToken = tokenList[i];
+    char *currentDirectoryPathString;
+    for(i = 0; currentToken; i++){
+            currentDirectoryPathString = combineTwoStringPath(currentToken, directoryPathString);
+            if(isDir(currentDirectoryPathString) ){
+            if(isRecursive){
+                findStringInFile(currentDirectoryPathString, searchStr, isRecursive);
+            }
+        }
+        else{
+            fileString = getWholeFileString(currentDirectoryPathString);
+            searchString(fileString, searchStr, directoryPathString);
+        }
+        free(currentDirectoryPathString);
+    }
+}   
+void *startSearching(char* searchStr, int isRecursive){
+    char cwd[MAX_PATH];
+    if((getcwd(cwd, MAX_PATH)) == NULL){
+        perror("Error getting current working directory");
+        exit(2);
+    }
+    
+    if(isRecursive){
+        return findStringInFile(cwd, searchStr, 1);
+    }
+    else{
+        
+        return findStringInFile(cwd , searchStr, 0); 
+    }   
+}
+
+
 int main(void)
 {
             char inputBuffer[MAX_LINE]; /*buffer to hold command entered */
@@ -229,7 +332,22 @@ int main(void)
 
                         }
                         else if(strcmp(args[0], "search") == 0){
+                            if(!args[1]){
+                                perror("Please enter a text to search");
+                                exit(3);
+                            }
+                            if(strcmp(args[1], "-r") == 0){
+                                if(args[2])
+                                    startSearching(args[2],1);
+                                else{
+                                    perror("Please enter a text to search");
+                                    exit(3);
+                                }
 
+                            }
+                            else{
+                                startSearching(args[1],0);
+                            }
                         }
                         else{
                             char *commandDirectory = findCommand(args[0]);
