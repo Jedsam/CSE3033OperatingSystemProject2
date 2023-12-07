@@ -49,7 +49,7 @@ char* getDirectoryString(char *directoryPath){
         return 0;
     }
     if(directoryInformation = readdir(currentDirectory)) {
-        resultString = (char*)calloc(10000,sizeof(char));
+        resultString = (char*)calloc(100000,sizeof(char));
         strcpy(resultString, directoryInformation -> d_name);
     }
     while((directoryInformation = readdir(currentDirectory))){
@@ -415,6 +415,7 @@ int main(void)
                                     printf("Could not find the command!\n");
                                     exit(1); /*Command not found error*/
                                 }
+                                
                                 execv(commandDirectory,&args[0]);
                             }
                             else if(background == 0){
