@@ -36,6 +36,8 @@ void addChar(DynamicString *dyStr, char addChar){
         dyStr -> maxSize *= 2 + 1;
         dyStr -> strPtr = realloc(dyStr ->strPtr,dyStr -> maxSize);
     }
+    dyStr -> strPtr[dyStr -> currentSize] = addChar;
+    dyStr -> currentSize++;
 }
 
 char* getDirectoryString(char *directoryPath){
@@ -47,24 +49,24 @@ char* getDirectoryString(char *directoryPath){
         return 0;
     }
     if(directoryInformation = readdir(currentDirectory)) {
-        resultString = (char*)calloc(100000,sizeof(char));
+        resultString = (char*)calloc(10000,sizeof(char));
         strcpy(resultString, directoryInformation -> d_name);
     }
     while((directoryInformation = readdir(currentDirectory))){
         tempString = directoryInformation -> d_name;
-        strcat(resultString, tempString);
         strcat(resultString, " ");
+        strcat(resultString, tempString);
     }
     closedir(currentDirectory);
     return resultString;
 }
-char **getTokenList(char *fullString, const char *deliminator){
+char **getTokenList(char *fullString, const char deliminator){
     char **tokenList = (char**)calloc(100,sizeof(char*));
-    char *tempToken = strtok(fullString,deliminator);
+    char *tempToken = strtok(fullString,&deliminator);
     int i;
     for(i = 0; i < 100 && tempToken; i++){
         tokenList[i] = tempToken;
-        tempToken = strtok(NULL, deliminator);
+        tempToken = strtok(NULL, &deliminator);
     }
     return tokenList;
 }
@@ -101,7 +103,7 @@ char *findCommand(char* commandNameOrigin){
     char **tokenList;
     pathString = getenv("PATH");
     pathString = copyString(pathString);
-    tokenList = getTokenList(pathString, &deliminator);
+    tokenList = getTokenList(pathString, deliminator);
     int i = 0;
     currentToken = tokenList[i];
     if(currentToken == 0){
@@ -216,7 +218,8 @@ void setup(char inputBuffer[], char *args[],int *background)
  }
 char *getWholeFileString(char *fileName){
     FILE *tempFile = fopen(fileName, "r");
-    
+    if(!tempFile)
+        return 0;
     DynamicString *fileOutput = createDynamicString(100); 
     char current = fgetc(tempFile);
     while(current != EOF){
@@ -238,70 +241,121 @@ int isDir(char *fileName){
     return 0;
 }
 char *combineTwoStringPath(char *str1, char *str2){
-    char *str3 = calloc(strlen(str1) + strlen(str2) + 1, sizeof(char));
-    strcat(str3, str2);
+    int str2len;
+    if(str2)
+    str2len = strlen(str2);
+    else str2len = 0;
+
+    char *str3 = calloc(strlen(str1) + str2len + 1, sizeof(char));
+    if(str2)
+    strcpy(str3, str2);
+
     strcat(str3, "/");
-    strcpy(str3, str1);
+    strcat(str3, str1);
     return str3;
 }
 void searchString(char *searchedString, char *stringToSearchWith, char *pathName){
     int i = 0;
+    int k;
+    int startingInt;
     int lineCounter = 0;
+    int lineLength = 0;
     DynamicString *lineString = createDynamicString(100);
     int length = strlen(stringToSearchWith);
-    char *tempPointer;
+    char *tempPointer = calloc(1000, sizeof(char));
+    char tempCurrent;
     char current = searchedString[i];
     while(current){
         if(current == '\n'){
+            lineLength = 0;
             lineCounter++;
             free(lineString -> strPtr);
-            lineString -> strPtr = calloc(100,sizeof(char));
+            lineString -> strPtr = calloc(1000,sizeof(char));
+            lineString -> currentSize = 0;
         }
         else{
+            lineLength++;
             addChar(lineString, current);
         }
         if(strncmp(searchedString + i, stringToSearchWith, length) == 0){
-            printf("%d: %s -> %s", lineCounter, pathName, lineString ->strPtr);
+            k = i - lineLength + 1;
+            startingInt = k;
+
+            do{
+                tempCurrent = searchedString[k];
+                tempPointer[k - startingInt] = tempCurrent;
+                k++;
+            }while(tempCurrent != '\n' && tempCurrent != EOF);
+            printf("\t%d: %s -> %s", lineCounter + 1, pathName, tempPointer);
         }
         i++;
         current = searchedString[i];
     }
+    free(tempPointer);
 }
-void *findStringInFile(char *directoryPathString, char *searchStr, int isRecursive){
+void *findStringInFile(char *directoryPathString, char *searchStr, int isRecursive, char *normalDirectory){
     char *fileString;
     char *directoryString = getDirectoryString(directoryPathString);
     const char deliminator = ' ';
-    char **tokenList = getTokenList(directoryString, &deliminator);
+    char **tokenList = getTokenList(directoryString, deliminator);
     int i = 0;
     char *currentToken = tokenList[i];
     char *currentDirectoryPathString;
-    for(i = 0; currentToken; i++){
+    for(i = 0; currentToken;){
+            
             currentDirectoryPathString = combineTwoStringPath(currentToken, directoryPathString);
-            if(isDir(currentDirectoryPathString) ){
-            if(isRecursive){
-                findStringInFile(currentDirectoryPathString, searchStr, isRecursive);
+            if(isDir(currentToken)  &&
+            (strcmp(currentToken, "..") != 0) && 
+            (strcmp(currentToken, ".") != 0)){
+                if(isRecursive){
+                    chdir(currentToken);
+                    findStringInFile(copyString(currentDirectoryPathString), searchStr, isRecursive, combineTwoStringPath(currentToken, normalDirectory));
+                    chdir("..");
             }
         }
         else{
-            fileString = getWholeFileString(currentDirectoryPathString);
-            searchString(fileString, searchStr, directoryPathString);
+            fileString = getWholeFileString(currentToken);
+            if(fileString)
+                searchString(fileString, searchStr, combineTwoStringPath(currentToken, normalDirectory));
         }
+        i++;
+        currentToken = tokenList[i];
         free(currentDirectoryPathString);
     }
 }   
 void *startSearching(char* searchStr, int isRecursive){
     char cwd[MAX_PATH];
+    //REMOVE THIS BEFORE SUBMITTING
+    chdir(".");
+    
     if((getcwd(cwd, MAX_PATH)) == NULL){
         perror("Error getting current working directory");
         exit(2);
     }
-    
-    if(isRecursive){
-        return findStringInFile(cwd, searchStr, 1);
+    int length = strlen(searchStr);
+    if(searchStr[0] == '\"' && searchStr[length - 1] == '\"'){    
+        
+        char* tempStr = calloc(length - 2,sizeof(char));
+        int i;
+        length -= 2;
+        for(i = 0; i < length; i++){
+            tempStr[i] =  searchStr[i + 1]; 
+        }
+        if(isRecursive){
+        return findStringInFile(cwd, tempStr, 1, ".");
     }
     else{
         
-        return findStringInFile(cwd , searchStr, 0); 
+        return findStringInFile(cwd , tempStr, 0, "."); 
+    }   
+    free(tempStr);
+    }
+    if(isRecursive){
+        return findStringInFile(cwd, searchStr, 1, ".");
+    }
+    else{
+        
+        return findStringInFile(cwd , searchStr, 0, "."); 
     }   
 }
 
