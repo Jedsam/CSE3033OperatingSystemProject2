@@ -5,16 +5,26 @@
 #include <sys/wait.h>
 #include <dirent.h>
 #include <string.h>
+#include <fcntl.h>  // Include for file control options
+#include <signal.h>
+
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
 #define MAX_COMMAND 1000
 #define MAX_FOUND_STRING 1000
 #define MAX_PATH 128
+#define MAX_BOOKMARKS 10  // Define MAX_BOOKMARKS
+
+char *bookmarks[MAX_BOOKMARKS];
+int bookmarkCount = 0;
+
 
 typedef struct stringDynam{
     int maxSize;
     int currentSize;
     char *strPtr;
 }DynamicString;
+
+
 
 DynamicString *createDynamicString(int size){
     DynamicString *newStr = (DynamicString*) malloc(sizeof(DynamicString));
@@ -359,77 +369,141 @@ void *startSearching(char* searchStr, int isRecursive){
     }   
 }
 
+void handleIOredirection(char *args[]) {
+    int i;
+    int fd;
+    for(i = 0; args[i] != NULL; i++) {
+        if (strcmp(args[i], ">") == 0) {
+            args[i] = NULL;
+            fd = open(args[i + 1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            dup2(fd, STDOUT_FILENO);
+            close(fd);
+        } else if (strcmp(args[i], ">>") == 0) {
+            args[i] = NULL;
+            fd = open(args[i + 1], O_WRONLY | O_CREAT | O_APPEND, 0644);
+            dup2(fd, STDOUT_FILENO);
+            close(fd);
+        } else if (strcmp(args[i], "<") == 0) {
+            args[i] = NULL;
+            fd = open(args[i + 1], O_RDONLY);
+            dup2(fd, STDIN_FILENO);
+            close(fd);
+        } else if (strcmp(args[i], "2>") == 0) {
+            args[i] = NULL;
+            fd = open(args[i + 1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            dup2(fd, STDERR_FILENO);
+            close(fd);
+        }
+    }
+}
 
-int main(void)
-{
-            char inputBuffer[MAX_LINE]; /*buffer to hold command entered */
-            int background; /* equals 1 if a command is followed by '&' */
-            char *args[MAX_LINE/2 + 1]; /*command line arguments */
-            pid_t childpid;
-            pid_t childpidList[MAX_COMMAND];
-            int i = 0;
-            int status;
-            while (1){
-                        background = 0;
-                        printf("myshell: ");
-                        /*setup() calls exit() when Control-D is entered */
-                        setup(inputBuffer, args, &background);
-                        if(strcmp(args[0], "exit") == 0){
-                            if(checkPID(childpidList, MAX_COMMAND)){
-                                perror("There are background processes still running and do not terminate the shell process unless the user terminates all background processes.");
-                            }
-                            else {
-                                exit(0);
-                            }
-                        }
-                        else if(strcmp(args[0], "bookmark") == 0){
+void handleSignal(int sig) {
+    // Basic signal handling (e.g., for SIGINT and SIGTSTP)
+    printf("\nSignal %d received. Command aborted.\n", sig);
+}
 
-                        }
-                        else if(strcmp(args[0], "search") == 0){
-                            if(!args[1]){
-                                perror("Please enter a text to search");
-                                exit(3);
-                            }
-                            if(strcmp(args[1], "-r") == 0){
-                                if(args[2])
-                                    startSearching(args[2],1);
-                                else{
-                                    perror("Please enter a text to search");
-                                    exit(3);
-                                }
-
-                            }
-                            else{
-                                startSearching(args[1],0);
-                            }
-                        }
-                        else{
-                            char *commandDirectory = findCommand(args[0]);
-                            childpid = fork();
-                            if (childpid == -1){
-                                printf("Error creating fork for executing the command");
-                            }
-                            else if(childpid == 0){
-                                
-                                if(!commandDirectory){
-                                    printf("Could not find the command!\n");
-                                    exit(1); /*Command not found error*/
-                                }
-                                
-                                execv(commandDirectory,&args[0]);
-                            }
-                            else if(background == 0){
-                                waitpid(childpid, &status, 0);
-                            }
-                            childpidList[i] = childpid;
-                            childpid = 0;
-                            i++;
-                        }
-                        /** the steps are:
-                        (1) fork a child process using fork()
-                        (2) the child process will invoke execv()
-						(3) if background == 0, the parent will wait,
-                        otherwise it will invoke the setup() function again. */
+void manageBookmark(char *args[]) {
+    if (strcmp(args[1], "-l") == 0) {
+        // List bookmarks
+        for (int i = 0; i < bookmarkCount; i++) {
+            printf("%d: %s\n", i, bookmarks[i]);
+        }
+    } else if (strcmp(args[1], "-d") == 0) {
+        // Delete a bookmark
+        int index = atoi(args[2]);
+        if (index >= 0 && index < bookmarkCount) {
+            free(bookmarks[index]);
+            for (int i = index; i < bookmarkCount - 1; i++) {
+                bookmarks[i] = bookmarks[i + 1];
             }
-    
+            bookmarkCount--;
+        }
+    } else {
+        // Add a new bookmark
+        if (bookmarkCount < MAX_BOOKMARKS) {
+            bookmarks[bookmarkCount++] = strdup(args[1]);
+        } else {
+            printf("Bookmark limit reached.\n");
+        }
+    }
+}
+int main(void) {
+    char inputBuffer[MAX_LINE]; /* Buffer to hold the command entered */
+    int background; /* Equals 1 if a command is followed by '&' */
+    char *args[MAX_LINE / 2 + 1]; /* Command line arguments */
+    pid_t childpid;
+    pid_t childpidList[MAX_COMMAND];
+    int status;
+    int i = 0; // Initialize the index variable for childpidList
+
+    // Set up signal handling
+    signal(SIGINT, handleSignal);
+    signal(SIGTSTP, handleSignal);
+
+    while (1) {
+        background = 0;
+        printf("myshell: ");
+        setup(inputBuffer, args, &background); // Setup command
+
+        // Handle exit command
+        if (strcmp(args[0], "exit") == 0) {
+            if (checkPID(childpidList, MAX_COMMAND)) {
+                printf("There are background processes still running.\n");
+            } else {
+                exit(0);
+            }
+        }
+
+        // Handle bookmark command
+        else if (strcmp(args[0], "bookmark") == 0) {
+            manageBookmark(args);
+        }
+
+        // Handle search command
+        else if (strcmp(args[0], "search") == 0) {
+            if (!args[1]) {
+                perror("Please enter a text to search");
+                exit(3);
+            }
+            if (strcmp(args[1], "-r") == 0) {
+                if (args[2])
+                    startSearching(args[2], 1);
+                else {
+                    perror("Please enter a text to search");
+                    exit(3);
+                }
+            } else {
+                startSearching(args[1], 0);
+            }
+        }
+
+        // Handle other commands
+        else {
+            char *commandDirectory = findCommand(args[0]);
+            childpid = fork();
+            if (childpid == -1) {
+                printf("Error creating fork for executing the command");
+            } else if (childpid == 0) {
+                if (!commandDirectory) {
+                    printf("Could not find the command!\n");
+                    exit(1); /* Command not found error */
+                }
+                handleIOredirection(args);
+                execv(commandDirectory, args);
+                perror("execv"); // If execv returns, it's an error
+                exit(EXIT_FAILURE);
+            } else {
+                if (background == 0) {
+                    waitpid(childpid, &status, 0);
+                }
+                if (i < MAX_COMMAND) {
+                    childpidList[i] = childpid;
+                    i++;
+                } else {
+                    printf("Maximum number of child processes reached.\n");
+                }
+            }
+        }
+    }
+    return 0;
 }
