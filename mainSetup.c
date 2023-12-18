@@ -45,7 +45,7 @@ char* getDirectoryString(char *directoryPath){
     char *tempString, *resultString;
     DIR *currentDirectory = opendir(directoryPath);
     if(currentDirectory == NULL){
-        perror("Could not find the directory of the PATH");
+        printf("Could not find the directory of the PATH");
         return 0;
     }
     if(directoryInformation = readdir(currentDirectory)) {
@@ -169,7 +169,7 @@ void setup(char inputBuffer[], char *args[],int *background)
   However, if this occurs, errno is set to EINTR. We can check this  value
   and disregard the -1 value */
     if ( (length < 0) && (errno != EINTR) ) {
-        perror("error reading the command");
+        printf("error reading the command");
 	exit(-1);           /* terminate with error code of -1 */
     }
 
@@ -334,7 +334,7 @@ void *startSearching(char* searchStr, int isRecursive){
     chdir(".");
     
     if((getcwd(cwd, MAX_PATH)) == NULL){
-        perror("Error getting current working directory");
+        printf("Error getting current working directory");
         exit(2);
     }
     int length = strlen(searchStr);
@@ -371,7 +371,7 @@ int main(void)
             int background; /* equals 1 if a command is followed by '&' */
             char *args[MAX_LINE/2 + 1]; /*command line arguments */
             pid_t childpid;
-            pid_t childpidList[MAX_COMMAND];
+            pid_t *childpidList = calloc(sizeof(pid_t), MAX_COMMAND);
             int i = 0;
             int status;
             while (1){
@@ -382,7 +382,7 @@ int main(void)
                         setup(inputBuffer, args, &background);
                         if(strcmp(args[0], "exit") == 0){
                             if(checkPID(childpidList, MAX_COMMAND)){
-                                perror("There are background processes still running and do not terminate the shell process unless the user terminates all background processes.");
+                                printf("There are background processes still running and do not terminate the shell process unless the user terminates all background processes.\n");
                             }
                             else {
                                 exit(0);
@@ -393,14 +393,14 @@ int main(void)
                         }
                         else if(strcmp(args[0], "search") == 0){
                             if(!args[1]){
-                                perror("Please enter a text to search");
+                                printf("Please enter a text to search\n");
                                 exit(3);
                             }
                             if(strcmp(args[1], "-r") == 0){
                                 if(args[2])
                                     startSearching(args[2],1);
                                 else{
-                                    perror("Please enter a text to search");
+                                    printf("Please enter a text to search\n");
                                     exit(3);
                                 }
 
