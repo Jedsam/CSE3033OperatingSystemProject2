@@ -395,7 +395,6 @@ void handleSignal(int sig) {
     // Basic signal handling (e.g., for SIGINT and SIGTSTP)
     printf("\nSignal %d received. Command aborted.\n", sig);
 }
-
 void manageBookmark(char *args[]) {
     if (args[1] == NULL) {
         printf("No arguments provided for bookmark command.\n");
@@ -408,7 +407,7 @@ void manageBookmark(char *args[]) {
             printf("No bookmarks set.\n");
         } else {
             for (int i = 0; i < bookmarkCount; i++) {
-                printf("%d: %s\n", i, bookmarks[i]);
+                printf("%d: \"%s\n", i, bookmarks[i]); // Adding quotes around the bookmark
             }
         }
     } else if (strcmp(args[1], "-d") == 0) {
@@ -432,12 +431,13 @@ void manageBookmark(char *args[]) {
         // Add a new bookmark
         if (bookmarkCount < MAX_BOOKMARKS) {
             bookmarks[bookmarkCount++] = strdup(args[1]);
-            printf("Bookmark added: %s\n", args[1]);
+            printf("Bookmark added: \"%s\n", args[1]); // Adding quotes around the added bookmark
         } else {
             printf("Bookmark limit reached.\n");
         }
     }
 }
+
 
 int main(void) {
     char inputBuffer[MAX_LINE]; /* Buffer to hold the command entered */
