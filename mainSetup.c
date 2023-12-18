@@ -136,7 +136,12 @@ char *findCommand(char* commandNameOrigin){
 in the next command line; separate it into distinct arguments (using blanks as
 delimiters), and set the args array entries to point to the beginning of what
 will become null-terminated, C-style strings. */
-
+void emptyBuffer(char inputBuffer[], int length){
+    int i;
+    for(i = 0; i < length; i++){
+        inputBuffer[i] = 0;
+    }
+}
 void setup(char inputBuffer[], char *args[],int *background)
 {
     int length, /* # of characters in the command line */
@@ -145,7 +150,7 @@ void setup(char inputBuffer[], char *args[],int *background)
         ct;     /* index of where to place the next parameter into args[] */
     
     ct = 0;
-        
+    emptyBuffer(inputBuffer, MAX_LINE);
     /* read what the user enters on the command line */
     length = read(STDIN_FILENO,inputBuffer,MAX_LINE);  
 
@@ -372,6 +377,7 @@ int main(void)
             while (1){
                         background = 0;
                         printf("myshell: ");
+                        fflush(stdout);
                         /*setup() calls exit() when Control-D is entered */
                         setup(inputBuffer, args, &background);
                         if(strcmp(args[0], "exit") == 0){
