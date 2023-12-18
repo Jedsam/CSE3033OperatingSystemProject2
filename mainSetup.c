@@ -391,10 +391,18 @@ void handleIOredirection(char *args[]) {
     }
 }
 
+pid_t foregroundProcessPid = -1; // Global variable to keep track of the foreground process
+
 void handleSignal(int sig) {
-    // Basic signal handling (e.g., for SIGINT and SIGTSTP)
-    printf("\nSignal %d received. Command aborted.\n", sig);
+    if (sig == SIGTSTP && foregroundProcessPid != -1) {
+        // Send SIGTSTP to the foreground process to stop it
+        kill(foregroundProcessPid, SIGTSTP);
+    } else if (sig == SIGINT) {
+        printf("\nSIGINT received. Interrupting process.\n");
+    }
 }
+
+
 void manageBookmark(char *args[]) {
     if (args[1] == NULL) {
         printf("No arguments provided for bookmark command.\n");
@@ -456,6 +464,7 @@ int main(void) {
     while (1) {
         background = 0;
         printf("myshell: ");
+         fflush(stdout); 
         setup(inputBuffer, args, &background); // Setup command
 
         // First, handle I/O redirection
@@ -489,30 +498,33 @@ int main(void) {
             } else {
                 startSearching(args[1], 0);
             }
-        }
-        // Handle other commands
-        else if (args[0] != NULL) {
+                } else if (args[0] != NULL) {
             char *commandDirectory = findCommand(args[0]);
-            childpid = fork();
-            if (childpid == -1) {
-                perror("Error creating fork for executing the command");
-            } else if (childpid == 0) {
-                if (!commandDirectory) {
-                    printf("Could not find the command!\n");
-                    exit(1); /* Command not found error */
-                }
-                execv(commandDirectory, args);
-                perror("execv"); // If execv returns, it's an error
-                exit(EXIT_FAILURE);
-            } else {
-                if (background == 0) {
-                    waitpid(childpid, &status, 0);
-                }
-                if (i < MAX_COMMAND) {
-                    childpidList[i++] = childpid;
+            if (commandDirectory != NULL) {
+                childpid = fork();
+                if (childpid == -1) {
+                    perror("Error creating fork for executing the command");
+                } else if (childpid == 0) {
+                    execv(commandDirectory, args);
+                    perror("execv");
+                    exit(EXIT_FAILURE);
                 } else {
-                    printf("Maximum number of child processes reached.\n");
+                    if (!background) {
+                        foregroundProcessPid = childpid;
+                        waitpid(childpid, &status, WUNTRACED);
+                        if (WIFSTOPPED(status)) {
+                            printf("\nProcess %d stopped\n", childpid);
+                        }
+                        foregroundProcessPid = -1;
+                    }
+                    if (i < MAX_COMMAND) {
+                        childpidList[i++] = childpid;
+                    } else {
+                        printf("Maximum number of child processes reached.\n");
+                    }
                 }
+            } else {
+                printf("Could not find the command!\n");
             }
         }
     }
