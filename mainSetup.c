@@ -457,22 +457,23 @@ int main(void) {
         printf("myshell: ");
         setup(inputBuffer, args, &background); // Setup command
 
+        // First, handle I/O redirection
+        handleIOredirection(args);
+
         // Handle exit command
-        if (strcmp(args[0], "exit") == 0) {
+        if (args[0] != NULL && strcmp(args[0], "exit") == 0) {
             if (checkPID(childpidList, MAX_COMMAND)) {
                 printf("There are background processes still running.\n");
             } else {
                 exit(0);
             }
         }
-
         // Handle bookmark command
-        else if (strcmp(args[0], "bookmark") == 0) {
+        else if (args[0] != NULL && strcmp(args[0], "bookmark") == 0) {
             manageBookmark(args);
         }
-
         // Handle search command
-        else if (strcmp(args[0], "search") == 0) {
+        else if (args[0] != NULL && strcmp(args[0], "search") == 0) {
             if (!args[1]) {
                 perror("Please enter a text to search");
                 exit(3);
@@ -488,19 +489,17 @@ int main(void) {
                 startSearching(args[1], 0);
             }
         }
-
         // Handle other commands
-        else {
+        else if (args[0] != NULL) {
             char *commandDirectory = findCommand(args[0]);
             childpid = fork();
             if (childpid == -1) {
-                printf("Error creating fork for executing the command");
+                perror("Error creating fork for executing the command");
             } else if (childpid == 0) {
                 if (!commandDirectory) {
                     printf("Could not find the command!\n");
                     exit(1); /* Command not found error */
                 }
-                handleIOredirection(args);
                 execv(commandDirectory, args);
                 perror("execv"); // If execv returns, it's an error
                 exit(EXIT_FAILURE);
@@ -509,8 +508,7 @@ int main(void) {
                     waitpid(childpid, &status, 0);
                 }
                 if (i < MAX_COMMAND) {
-                    childpidList[i] = childpid;
-                    i++;
+                    childpidList[i++] = childpid;
                 } else {
                     printf("Maximum number of child processes reached.\n");
                 }
