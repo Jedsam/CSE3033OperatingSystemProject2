@@ -398,6 +398,7 @@ void handleSignal(int sig) {
 void manageBookmark(char *args[]) {
     if (args[1] == NULL) {
         printf("No arguments provided for bookmark command.\n");
+        fprintf(stderr, "Error: No arguments provided for bookmark command.\n"); // Print to stderr
         return;
     }
 
