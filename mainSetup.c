@@ -472,11 +472,13 @@ int main(void) {
     while (1) {
         background = 0;
         printf("myshell: ");
-        setup(inputBuffer, args, &background); // Setup command
 
-        //ensure myshell is printed immediately
+             //ensure myshell is printed immediately
         fflush(stdout); 
 
+        setup(inputBuffer, args, &background); // Setup command
+
+   
         // Handle I/O redirection
         handleIOredirection(args);
 
