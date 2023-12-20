@@ -37,6 +37,7 @@ DynamicString *createDynamicStringWithStr(char *Str){
     newStr -> currentSize = strlen(Str);
     newStr -> maxSize = newStr -> currentSize;
 }
+
 void freeDynamicString(DynamicString *dyStr){
     free(dyStr-> strPtr);
     free(dyStr);
@@ -183,7 +184,9 @@ void setup(char inputBuffer[], char *args[], int *background) {
                     inQuote = 0;
                 } else {
                     inQuote = 1;
-                    start = i + 1; // Start of the quoted string
+                    if (start == -1) {
+                        start = i; // Include the opening quote in the argument
+                    }
                 }
                 break;
 
@@ -421,7 +424,7 @@ void manageBookmark(char *args[]) {
             printf("No bookmarks set.\n");
         } else {
             for (int i = 0; i < bookmarkCount; i++) {
-                printf("%d: \"%s\n", i, bookmarks[i]); // Adding quotes around the bookmark
+                printf("%d: %s\n", i, bookmarks[i]); // Adding quotes around the bookmark
             }
         }
     } else if (strcmp(args[1], "-d") == 0) {
@@ -445,7 +448,7 @@ void manageBookmark(char *args[]) {
         // Add a new bookmark
         if (bookmarkCount < MAX_BOOKMARKS) {
             bookmarks[bookmarkCount++] = strdup(args[1]);
-            printf("Bookmark added: \"%s\n", args[1]); // Adding quotes around the added bookmark
+            printf("Bookmark added: %s\n", args[1]); // Adding quotes around the added bookmark
         } else {
             printf("Bookmark limit reached.\n");
         }
@@ -471,7 +474,10 @@ int main(void) {
         printf("myshell: ");
         setup(inputBuffer, args, &background); // Setup command
 
-        // First, handle I/O redirection
+        //ensure myshell is printed immediately
+        fflush(stdout); 
+
+        // Handle I/O redirection
         handleIOredirection(args);
 
         // Handle exit command
