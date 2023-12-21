@@ -62,9 +62,8 @@ char* getDirectoryString(char *directoryPath){
 }
 char **getTokenList(char *fullString, const char deliminator){
     char **tokenList = (char**)calloc(1000,sizeof(char*));
-    char *tempFullString = calloc(sizeof(char), strlen(fullString));
-    strcpy(tempFullString, fullString);
-    char *tempToken = strtok(tempFullString,&deliminator);
+    
+    char *tempToken = strtok(fullString,&deliminator);
     int i;
     for(i = 0; i < 100 && tempToken; i++){
         tokenList[i] = tempToken;
@@ -322,13 +321,16 @@ void searchString(char *searchedString, char *stringToSearchWith, char *pathName
     if(lineLength != 0){
         freeDynamicString(lineString);
     }
+    
     free(tempPointer);
 }
 void *findStringInFile(char *directoryPathString, char *searchStr, int isRecursive, char *normalDirectory){
     char *fileString;
     char *directoryString = getDirectoryString(directoryPathString);
     const char deliminator = ' ';
-    char **tokenList = getTokenList(directoryString, deliminator);
+    char *tempFullString = calloc(sizeof(char), strlen(directoryString));
+    strcpy(tempFullString, directoryString);
+    char **tokenList = getTokenList(tempFullString, deliminator);
     int i = 0;
     char *currentToken = tokenList[i];
     char *currentDirectoryPathString;
@@ -358,7 +360,7 @@ void *findStringInFile(char *directoryPathString, char *searchStr, int isRecursi
         currentToken = tokenList[i];
         
     }
-    free(directoryString);
+    free(tempFullString);
 }   
 void *startSearching(char* searchStr, int isRecursive){
     char cwd[MAX_PATH];
