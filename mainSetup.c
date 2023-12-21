@@ -8,7 +8,7 @@
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
 #define MAX_COMMAND 1000
 #define MAX_FOUND_STRING 1000
-#define MAX_PATH 128
+#define MAX_PATH 1000
 
 typedef struct stringDynam{
     int maxSize;
@@ -32,7 +32,7 @@ void freeDynamicString(DynamicString *dyStr){
     free(dyStr);
 }
 void addChar(DynamicString *dyStr, char addChar){
-    if(dyStr -> currentSize + 1 >= dyStr -> maxSize){
+    if(dyStr -> currentSize + 2 >= dyStr -> maxSize){
         dyStr -> maxSize *= 2 + 1;
         dyStr -> strPtr = realloc(dyStr ->strPtr,dyStr -> maxSize);
     }
@@ -49,7 +49,7 @@ char* getDirectoryString(char *directoryPath){
         return 0;
     }
     if(directoryInformation = readdir(currentDirectory)) {
-        resultString = (char*)calloc(100000,sizeof(char));
+        resultString = (char*)calloc(1000000,sizeof(char));
         strcpy(resultString, directoryInformation -> d_name);
     }
     while((directoryInformation = readdir(currentDirectory))){
@@ -265,7 +265,7 @@ void searchString(char *searchedString, char *stringToSearchWith, char *pathName
     int startingInt;
     int lineCounter = 0;
     int lineLength = 0;
-    DynamicString *lineString = createDynamicString(100);
+    DynamicString *lineString = createDynamicString(1000);
     int length = strlen(stringToSearchWith);
     char *tempPointer = calloc(1000, sizeof(char));
     char tempCurrent;
@@ -274,9 +274,8 @@ void searchString(char *searchedString, char *stringToSearchWith, char *pathName
         if(current == '\n'){
             lineLength = 0;
             lineCounter++;
-            free(lineString -> strPtr);
-            lineString -> strPtr = calloc(1000,sizeof(char));
-            lineString -> currentSize = 0;
+            freeDynamicString(lineString);
+            lineString = createDynamicString(1000);
         }
         else{
             lineLength++;
