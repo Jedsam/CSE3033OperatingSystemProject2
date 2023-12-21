@@ -17,6 +17,8 @@
 char *bookmarks[MAX_BOOKMARKS];
 int bookmarkCount = 0;
 pid_t foregroundProcessPid = -1;
+pid_t foregroundProcessGroupId = -1;
+
 
 typedef struct stringDynam{
     int maxSize;
@@ -397,14 +399,12 @@ void handleIOredirection(char *args[]) {
 
 void handleSignal(int sig) {
     if (sig == SIGTSTP) {
-        if (foregroundProcessPid != -1) {
-            // Send SIGSTOP to the foreground process and its descendants
-            kill(-foregroundProcessPid, SIGSTOP);
+        if (foregroundProcessGroupId != -1) {
+            // Send SIGSTOP only to the foreground process group
+            kill(-foregroundProcessGroupId, SIGSTOP);
             printf("\nForeground process stopped.\n");
-            //fflush(stdout);
         } else {
             printf("\nNo foreground process to stop.\n");
-            //fflush(stdout);
         }
     }
 }
@@ -466,7 +466,7 @@ int main(void) {
     int i = 0; // Initialize the index variable for childpidList
 
     // Set up signal handling
-    signal(SIGINT, handleSignal);
+    //signal(SIGINT, handleSignal);
     signal(SIGTSTP, handleSignal);
 
     while (1) {
@@ -518,6 +518,8 @@ int main(void) {
             if (childpid == -1) {
                 perror("Error creating fork for executing the command");
             } else if (childpid == 0) {
+            // Set the process group for the child process
+                setpgid(0, 0);
                 if (!commandDirectory) {
                     printf("Could not find the command!\n");
                     exit(1); /* Command not found error */
@@ -527,12 +529,16 @@ int main(void) {
                 exit(EXIT_FAILURE);
             } else {
                 if (!background) {
-                    foregroundProcessPid = childpid;
-                    waitpid(childpid, &status, WUNTRACED);
-                    if (WIFSTOPPED(status)) {
-                        printf("\nProcess %d stopped\n", childpid);
-                    }
-                    foregroundProcessPid = -1;
+                // Set the process group for the foreground process
+		    setpgid(childpid, childpid);
+		    foregroundProcessPid = childpid;
+		    foregroundProcessGroupId = getpgid(childpid);
+		    waitpid(childpid, &status, WUNTRACED);
+		    if (WIFSTOPPED(status)) {
+		        printf("\nProcess %d stopped\n", childpid);
+		    }
+		    foregroundProcessPid = -1;
+		    foregroundProcessGroupId = -1;
                 }
                 if (i < MAX_COMMAND) {
                     childpidList[i++] = childpid;
