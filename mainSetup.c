@@ -412,6 +412,16 @@ void executeBookmarkCommand(char *command) {
     }
     args[ct] = NULL; // Null-terminate the arguments array
 
+    char *commandPath = findCommand(args[0]);
+    if (commandPath == NULL) {
+        printf("Command not found in PATH: %s\n", args[0]);
+        // Free duplicated arguments
+        for (int i = 0; i < ct; i++) {
+            free(args[i]);
+        }
+        return;
+    }
+
     pid = fork();
     if (pid == -1) {
         perror("fork failed");
@@ -423,9 +433,9 @@ void executeBookmarkCommand(char *command) {
     }
     if (pid == 0) {
         // Child process
-        execvp(args[0], args);
-        // If execvp returns, there was an error
-        perror("execvp failed");
+        execv(commandPath, args);
+        // If execv returns, there was an error
+        perror("execv failed");
         exit(EXIT_FAILURE);
     } else {
         // Parent process
