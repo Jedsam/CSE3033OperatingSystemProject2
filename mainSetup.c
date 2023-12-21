@@ -397,6 +397,50 @@ void handleIOredirection(char *args[]) {
 }
 
 
+void executeBookmarkCommand(char *command) {
+    char *args[MAX_LINE / 2 + 1];
+    int background = 0;
+    pid_t pid;
+    int status;
+
+    // Split the command into arguments
+    int ct = 0;
+    char *token = strtok(command, " ");
+    while (token != NULL) {
+        args[ct++] = strdup(token); // Duplicate and store the argument
+        token = strtok(NULL, " ");
+    }
+    args[ct] = NULL; // Null-terminate the arguments array
+
+    pid = fork();
+    if (pid == -1) {
+        perror("fork failed");
+        // Free duplicated arguments
+        for (int i = 0; i < ct; i++) {
+            free(args[i]);
+        }
+        return;
+    }
+    if (pid == 0) {
+        // Child process
+        execvp(args[0], args);
+        // If execvp returns, there was an error
+        perror("execvp failed");
+        exit(EXIT_FAILURE);
+    } else {
+        // Parent process
+        if (!background) {
+            waitpid(pid, &status, 0);
+        }
+    }
+
+    // Free duplicated arguments in the parent process
+    for (int i = 0; i < ct; i++) {
+        free(args[i]);
+    }
+}
+
+
 void handleSignal(int sig) {
     if (sig == SIGTSTP) {
         if (foregroundProcessGroupId != -1) {
@@ -414,25 +458,16 @@ void handleSignal(int sig) {
 void manageBookmark(char *args[]) {
     if (args[1] == NULL) {
         printf("No arguments provided for bookmark command.\n");
-        fprintf(stderr, "Error: No arguments provided for bookmark command.\n"); // Print to stderr
         return;
     }
 
     if (strcmp(args[1], "-l") == 0) {
         // List bookmarks
-        if (bookmarkCount == 0) {
-            printf("No bookmarks set.\n");
-        } else {
-            for (int i = 0; i < bookmarkCount; i++) {
-                printf("%d: %s\n", i, bookmarks[i]); // Adding quotes around the bookmark
-            }
+        for (int i = 0; i < bookmarkCount; i++) {
+            printf("%d: %s\n", i, bookmarks[i]);
         }
     } else if (strcmp(args[1], "-d") == 0) {
         // Delete a bookmark
-        if (args[2] == NULL) {
-            printf("No index provided for deletion.\n");
-            return;
-        }
         int index = atoi(args[2]);
         if (index >= 0 && index < bookmarkCount) {
             free(bookmarks[index]);
@@ -444,17 +479,24 @@ void manageBookmark(char *args[]) {
         } else {
             printf("Invalid index for bookmark deletion.\n");
         }
+    } else if (strcmp(args[1], "-i") == 0) {
+        // Execute a bookmarked command
+        int index = atoi(args[2]);
+        if (index >= 0 && index < bookmarkCount) {
+            executeBookmarkCommand(bookmarks[index]);
+        } else {
+            printf("Invalid index for bookmark execution.\n");
+        }
     } else {
         // Add a new bookmark
         if (bookmarkCount < MAX_BOOKMARKS) {
             bookmarks[bookmarkCount++] = strdup(args[1]);
-            printf("Bookmark added: %s\n", args[1]); // Adding quotes around the added bookmark
+            printf("Bookmark added: %s\n", args[1]);
         } else {
             printf("Bookmark limit reached.\n");
         }
     }
 }
-
 
 int main(void) {
     char inputBuffer[MAX_LINE]; /* Buffer to hold the command entered */
