@@ -5,16 +5,28 @@
 #include <sys/wait.h>
 #include <dirent.h>
 #include <string.h>
+#include <fcntl.h>  // Include for file control options
+#include <signal.h>
+
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
 #define MAX_COMMAND 1000
 #define MAX_FOUND_STRING 1000
 #define MAX_PATH 1000
+#define MAX_BOOKMARKS 10  // Define MAX_BOOKMARKS
+
+char *bookmarks[MAX_BOOKMARKS];
+int bookmarkCount = 0;
+pid_t foregroundProcessPid = -1;
+pid_t foregroundProcessGroupId = -1;
+
 
 typedef struct stringDynam{
     int maxSize;
     int currentSize;
     char *strPtr;
 }DynamicString;
+
+
 
 DynamicString *createDynamicString(int size){
     DynamicString *newStr = (DynamicString*) malloc(sizeof(DynamicString));
@@ -29,6 +41,7 @@ DynamicString *createDynamicStringWithStr(char *Str){
     newStr -> maxSize = newStr -> currentSize;
     return newStr;
 }
+
 void freeDynamicString(DynamicString *dyStr){
     free(dyStr-> strPtr);
     free(dyStr);
@@ -52,7 +65,7 @@ char* getDirectoryString(char *directoryPath){
     }
     DIR *currentDirectory = opendir(directoryPath);
     if(currentDirectory == NULL){
-        printf("Could not find the directory of the PATH");
+        perror("Could not find the directory of the PATH");
         return 0;
     }
     if(directoryInformation = readdir(currentDirectory)) {
@@ -96,8 +109,8 @@ int findStrInsideStr(char *searchedString, char* stringToSearchWith){
     int length = strlen(stringToSearchWith);
     char current = searchedString[i];
     while(current){
-        if(strncmp(searchedString + i, stringToSearchWith, length) == 0 && 
-        (searchedString[i + length] == ' ' || searchedString[i + length] == 0)){
+        if(strncmp(searchedString + i, stringToSearchWith, length) == 0 &&
+           (searchedString[i + length] == ' ' || searchedString[i + length] == 0)){
             return 1;
         }
         i++;
@@ -137,7 +150,7 @@ char *findCommand(char* commandNameOrigin){
             isFound = findStrInsideStr(currentDirectoryNameString, commandName);
             free(currentDirectoryNameString);
         }
-    } 
+    }
     free(pathString);
 
     if(isFound){
@@ -146,87 +159,78 @@ char *findCommand(char* commandNameOrigin){
     }
     else{
         return 0;
-    } 
+    }
 }
 /* The setup function below will not return any value, but it will just: read
 in the next command line; separate it into distinct arguments (using blanks as
 delimiters), and set the args array entries to point to the beginning of what
 will become null-terminated, C-style strings. */
-void emptyBuffer(char inputBuffer[], int length){
+
+void setup(char inputBuffer[], char *args[], int *background) {
+    int length;
     int i;
-    for(i = 0; i < length; i++){
-        inputBuffer[i] = 0;
-    }
-}
-void setup(char inputBuffer[], char *args[],int *background)
-{
-    int length, /* # of characters in the command line */
-        i,      /* loop index for accessing inputBuffer array */
-        start,  /* index where beginning of next command parameter is */
-        ct;     /* index of where to place the next parameter into args[] */
-    
-    ct = 0;
-    emptyBuffer(inputBuffer, MAX_LINE);
-    /* read what the user enters on the command line */
-    length = read(STDIN_FILENO,inputBuffer,MAX_LINE);  
+    int start = -1;
+    int ct = 0;
+    int inQuote = 0; // Flag to indicate if we are inside quotes
 
-    /* 0 is the system predefined file descriptor for stdin (standard input),
-       which is the user's screen in this case. inputBuffer by itself is the
-       same as &inputBuffer[0], i.e. the starting address of where to store
-       the command that is read, and length holds the number of characters
-       read in. inputBuffer is not a null terminated C-string. */
+    length = read(STDIN_FILENO, inputBuffer, MAX_LINE);
 
-    start = -1;
     if (length == 0)
-        exit(0);            /* ^d was entered, end of user command stream */
+        exit(0);
 
-/* the signal interrupted the read system call */
-/* if the process is in the read() system call, read returns -1
-  However, if this occurs, errno is set to EINTR. We can check this  value
-  and disregard the -1 value */
-    if ( (length < 0) && (errno != EINTR) ) {
-        printf("error reading the command");
-	exit(-1);           /* terminate with error code of -1 */
+    if (length < 0 && errno != EINTR) {
+        perror("error reading the command");
+        exit(-1);
     }
 
-	printf(">>%s<<",inputBuffer);
-    for (i=0;i<length;i++){ /* examine every character in the inputBuffer */
+    for (i = 0; i < length; i++) {
+        switch (inputBuffer[i]) {
+            case ' ':
+            case '\t':
+                if (inQuote == 0) {
+                    if (start != -1) {
+                        args[ct] = &inputBuffer[start];
+                        ct++;
+                    }
+                    inputBuffer[i] = '\0';
+                    start = -1;
+                }
+                break;
 
-        switch (inputBuffer[i]){
-	    case ' ':
-	    case '\t' :               /* argument separators */
-		if(start != -1){
-                    args[ct] = &inputBuffer[start];    /* set up pointer */
-		    ct++;
-		}
-                inputBuffer[i] = '\0'; /* add a null char; make a C string */
-		start = -1;
-		break;
+            case '\"':
+                if (inQuote) {
+                    inQuote = 0;
+                } else {
+                    inQuote = 1;
+                    if (start == -1) {
+                        start = i; // Include the opening quote in the argument
+                    }
+                }
+                break;
 
-            case '\n':                 /* should be the final char examined */
-		if (start != -1){
-                    args[ct] = &inputBuffer[start];     
-		    ct++;
-		}
+            case '\n':
+                if (start != -1) {
+                    args[ct] = &inputBuffer[start];
+                    ct++;
+                }
                 inputBuffer[i] = '\0';
-                args[ct] = NULL; /* no more arguments to this command */
-		break;
+                args[ct] = NULL;
+                break;
 
-	    default :             /* some other character */
-		if (start == -1)
-		    start = i;
-                if (inputBuffer[i] == '&'){
-		    *background  = 1;
-                    inputBuffer[i-1] = '\0';
-		}
-	} /* end of switch */
-     }    /* end of for */
-     args[ct] = NULL; /* just in case the input line was > 80 */
+            default:
+                if (start == -1 && inQuote == 0)
+                    start = i;
+                if (inputBuffer[i] == '&' && inQuote == 0) {
+                    *background = 1;
+                    inputBuffer[i] = '\0';
+                }
+        }
+    }
+    args[ct] = NULL; // Null-terminate the argument list
+}
 
-	for (i = 0; i <= ct; i++)
-		printf("args %d = %s\n",i,args[i]);
-} /* end of setup routine */
- int checkPID(pid_t *childpidList, int length){
+
+int checkPID(pid_t *childpidList, int length){
     int i;
     int status;
     for(i = 0; i < length && childpidList[i]; i++){
@@ -253,13 +257,13 @@ char *getWholeFileString(char *fileName){
     FILE *tempFile = fopen(fileName, "r");
     if(!tempFile)
         return 0;
-    DynamicString *fileOutput = createDynamicString(100); 
+    DynamicString *fileOutput = createDynamicString(100);
     char current = fgetc(tempFile);
     while(current != EOF){
         addChar(fileOutput, current);
         current = fgetc(tempFile);
     }
-    
+
     fclose(tempFile);
     char *temp = fileOutput -> strPtr;
     free(fileOutput);
@@ -277,7 +281,7 @@ char *combineTwoStringPath(char *str1, char *str2){
     int str2len;
     int str1len;
     if(str2)
-    str2len = strlen(str2);
+        str2len = strlen(str2);
     else str2len = 0;
     if(str1)
     str1len = strlen(str1);
@@ -285,7 +289,7 @@ char *combineTwoStringPath(char *str1, char *str2){
 
     char *str3 = calloc(str1len + str2len + 2, sizeof(char));
     if(str2)
-    strcpy(str3, str2);
+        strcpy(str3, str2);
 
     strcat(str3, "/");
     if(str1)
@@ -397,110 +401,269 @@ void *startSearching(char* searchStr, int isRecursive){
     char cwd[MAX_PATH];
     //REMOVE THIS BEFORE SUBMITTING
     chdir(".");
-    
+
     if((getcwd(cwd, MAX_PATH)) == NULL){
-        printf("Error getting current working directory");
+        perror("Error getting current working directory");
         exit(2);
     }
     int length = strlen(searchStr);
-    if(searchStr[0] == '\"' && searchStr[length - 1] == '\"'){    
-        
+    if(searchStr[0] == '\"' && searchStr[length - 1] == '\"'){
+
         char* tempStr = calloc(length - 2,sizeof(char));
         int i;
         length -= 2;
         for(i = 0; i < length; i++){
-            tempStr[i] =  searchStr[i + 1]; 
+            tempStr[i] =  searchStr[i + 1];
         }
         if(isRecursive){
-        return findStringInFile(cwd, tempStr, 1, ".");
-    }
-    else{
-        
-        return findStringInFile(cwd , tempStr, 0, "."); 
-    }   
-    free(tempStr);
+            return findStringInFile(cwd, tempStr, 1, ".");
+        }
+        else{
+
+            return findStringInFile(cwd , tempStr, 0, ".");
+        }
+        free(tempStr);
     }
     if(isRecursive){
         return findStringInFile(cwd, searchStr, 1, ".");
     }
     else{
-        
-        return findStringInFile(cwd , searchStr, 0, "."); 
-    }   
+
+        return findStringInFile(cwd , searchStr, 0, ".");
+    }
+}
+
+void handleIOredirection(char *args[]) {
+    int i;
+    int fd;
+    for(i = 0; args[i] != NULL; i++) {
+        if (strcmp(args[i], ">") == 0) {
+            args[i] = NULL;
+            fd = open(args[i + 1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            dup2(fd, STDOUT_FILENO);
+            close(fd);
+        } else if (strcmp(args[i], ">>") == 0) {
+            args[i] = NULL;
+            fd = open(args[i + 1], O_WRONLY | O_CREAT | O_APPEND, 0644);
+            dup2(fd, STDOUT_FILENO);
+            close(fd);
+        } else if (strcmp(args[i], "<") == 0) {
+            args[i] = NULL;
+            fd = open(args[i + 1], O_RDONLY);
+            dup2(fd, STDIN_FILENO);
+            close(fd);
+        } else if (strcmp(args[i], "2>") == 0) {
+            args[i] = NULL;
+            fd = open(args[i + 1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            dup2(fd, STDERR_FILENO);
+            close(fd);
+        }
+    }
 }
 
 
-int main(void)
-{
-            char inputBuffer[MAX_LINE]; /*buffer to hold command entered */
-            int background; /* equals 1 if a command is followed by '&' */
-            char *args[MAX_LINE/2 + 1]; /*command line arguments */
-            pid_t childpid;
-            pid_t *childpidList = calloc(sizeof(pid_t), MAX_COMMAND);
-            int i = 0;
-            int status;
-            while (1){
-                        background = 0;
-                        printf("myshell: ");
-                        fflush(stdout);
-                        /*setup() calls exit() when Control-D is entered */
-                        setup(inputBuffer, args, &background);
-                        if(strcmp(args[0], "exit") == 0){
-                            if(checkPID(childpidList, MAX_COMMAND)){
-                                printf("There are background processes still running and do not terminate the shell process unless the user terminates all background processes.\n");
-                            }
-                            else {
-                                exit(0);
-                            }
-                        }
-                        else if(strcmp(args[0], "bookmark") == 0){
+void executeBookmarkCommand(char *command) {
+    char *args[MAX_LINE / 2 + 1];
+    int background = 0;
+    pid_t pid;
+    int status;
 
-                        }
-                        else if(strcmp(args[0], "search") == 0){
-                            if(!args[1]){
-                                printf("Please enter a text to search\n");
-                                exit(3);
-                            }
-                            if(strcmp(args[1], "-r") == 0){
-                                if(args[2])
-                                    startSearching(args[2],1);
-                                else{
-                                    printf("Please enter a text to search\n");
-                                    exit(3);
-                                }
+    // Split the command into arguments
+    int ct = 0;
+    char *token = strtok(command, " ");
+    while (token != NULL) {
+        args[ct++] = strdup(token); // Duplicate and store the argument
+        token = strtok(NULL, " ");
+    }
+    args[ct] = NULL; // Null-terminate the arguments array
 
-                            }
-                            else{
-                                startSearching(args[1],0);
-                            }
-                        }
-                        else{
-                            char *commandDirectory = findCommand(args[0]);
-                            childpid = fork();
-                            if (childpid == -1){
-                                printf("Error creating fork for executing the command");
-                            }
-                            else if(childpid == 0){
-                                
-                                if(!commandDirectory){
-                                    printf("Could not find the command!\n");
-                                    exit(1); /*Command not found error*/
-                                }
-                                
-                                execv(commandDirectory,&args[0]);
-                            }
-                            else if(background == 0){
-                                waitpid(childpid, &status, 0);
-                            }
-                            childpidList[i] = childpid;
-                            childpid = 0;
-                            i++;
-                        }
-                        /** the steps are:
-                        (1) fork a child process using fork()
-                        (2) the child process will invoke execv()
-						(3) if background == 0, the parent will wait,
-                        otherwise it will invoke the setup() function again. */
+    char *commandPath = findCommand(args[0]);
+    if (commandPath == NULL) {
+        printf("Command not found in PATH: %s\n", args[0]);
+        // Free duplicated arguments
+        for (int i = 0; i < ct; i++) {
+            free(args[i]);
+        }
+        return;
+    }
+
+    pid = fork();
+    if (pid == -1) {
+        perror("fork failed");
+        // Free duplicated arguments
+        for (int i = 0; i < ct; i++) {
+            free(args[i]);
+        }
+        return;
+    }
+    if (pid == 0) {
+        // Child process
+        execv(commandPath, args);
+        // If execv returns, there was an error
+        perror("execv failed");
+        exit(EXIT_FAILURE);
+    } else {
+        // Parent process
+        if (!background) {
+            waitpid(pid, &status, 0);
+        }
+    }
+
+    // Free duplicated arguments in the parent process
+    for (int i = 0; i < ct; i++) {
+        free(args[i]);
+    }
+}
+
+
+void handleSignal(int sig) {
+    if (sig == SIGTSTP) {
+        if (foregroundProcessGroupId != -1) {
+            // Send SIGSTOP only to the foreground process group
+            kill(-foregroundProcessGroupId, SIGSTOP);
+            printf("\nForeground process stopped.\n");
+        } else {
+            printf("\nNo foreground process to stop.\n");
+        }
+    }
+}
+
+
+
+void manageBookmark(char *args[]) {
+    if (args[1] == NULL) {
+        printf("No arguments provided for bookmark command.\n");
+        return;
+    }
+
+    if (strcmp(args[1], "-l") == 0) {
+        // List bookmarks
+        for (int i = 0; i < bookmarkCount; i++) {
+            printf("%d: %s\n", i, bookmarks[i]);
+        }
+    } else if (strcmp(args[1], "-d") == 0) {
+        // Delete a bookmark
+        int index = atoi(args[2]);
+        if (index >= 0 && index < bookmarkCount) {
+            free(bookmarks[index]);
+            for (int i = index; i < bookmarkCount - 1; i++) {
+                bookmarks[i] = bookmarks[i + 1];
             }
-    
+            bookmarkCount--;
+            printf("Bookmark %d deleted.\n", index);
+        } else {
+            printf("Invalid index for bookmark deletion.\n");
+        }
+    } else if (strcmp(args[1], "-i") == 0) {
+        // Execute a bookmarked command
+        int index = atoi(args[2]);
+        if (index >= 0 && index < bookmarkCount) {
+            executeBookmarkCommand(bookmarks[index]);
+        } else {
+            printf("Invalid index for bookmark execution.\n");
+        }
+    } else {
+        // Add a new bookmark
+        if (bookmarkCount < MAX_BOOKMARKS) {
+            bookmarks[bookmarkCount++] = strdup(args[1]);
+            printf("Bookmark added: %s\n", args[1]);
+        } else {
+            printf("Bookmark limit reached.\n");
+        }
+    }
+}
+
+int main(void) {
+    char inputBuffer[MAX_LINE]; /* Buffer to hold the command entered */
+    int background; /* Equals 1 if a command is followed by '&' */
+    char *args[MAX_LINE / 2 + 1]; /* Command line arguments */
+    pid_t childpid;
+    pid_t childpidList[MAX_COMMAND];
+    int status;
+    int i = 0; // Initialize the index variable for childpidList
+
+    // Set up signal handling
+    //signal(SIGINT, handleSignal);
+    signal(SIGTSTP, handleSignal);
+
+    while (1) {
+        background = 0;
+        printf("myshell: ");
+
+             //ensure myshell is printed immediately
+        fflush(stdout); 
+
+        setup(inputBuffer, args, &background); // Setup command
+
+   
+        // Handle I/O redirection
+        handleIOredirection(args);
+
+        // Handle exit command
+        if (args[0] != NULL && strcmp(args[0], "exit") == 0) {
+            if (checkPID(childpidList, MAX_COMMAND)) {
+                printf("There are background processes still running.\n");
+            } else {
+                exit(0);
+            }
+        }
+            // Handle bookmark command
+        else if (args[0] != NULL && strcmp(args[0], "bookmark") == 0) {
+            manageBookmark(args);
+        }
+            // Handle search command
+        else if (args[0] != NULL && strcmp(args[0], "search") == 0) {
+            if (!args[1]) {
+                perror("Please enter a text to search");
+                exit(3);
+            }
+            if (strcmp(args[1], "-r") == 0) {
+                if (args[2])
+                    startSearching(args[2], 1);
+                else {
+                    perror("Please enter a text to search");
+                    exit(3);
+                }
+            } else {
+                startSearching(args[1], 0);
+            }
+        }
+            // Handle other commands
+        else if (args[0] != NULL) {
+            char *commandDirectory = findCommand(args[0]);
+            childpid = fork();
+            if (childpid == -1) {
+                perror("Error creating fork for executing the command");
+            } else if (childpid == 0) {
+            // Set the process group for the child process
+                setpgid(0, 0);
+                if (!commandDirectory) {
+                    printf("Could not find the command!\n");
+                    exit(1); /* Command not found error */
+                }
+                execv(commandDirectory, args);
+                perror("execv"); // If execv returns, it's an error
+                exit(EXIT_FAILURE);
+            } else {
+                if (!background) {
+                // Set the process group for the foreground process
+		    setpgid(childpid, childpid);
+		    foregroundProcessPid = childpid;
+		    foregroundProcessGroupId = getpgid(childpid);
+		    waitpid(childpid, &status, WUNTRACED);
+		    if (WIFSTOPPED(status)) {
+		        printf("\nProcess %d stopped\n", childpid);
+		    }
+		    foregroundProcessPid = -1;
+		    foregroundProcessGroupId = -1;
+                }
+                if (i < MAX_COMMAND) {
+                    childpidList[i++] = childpid;
+                } else {
+                    printf("Maximum number of child processes reached.\n");
+                }
+            }
+        }
+    }
+    return 0;
 }
