@@ -1,0 +1,25 @@
+In the provided program, each thread calculates the sum of square roots for a portion of the range specified by the user. To achieve this, we need to pass information to each thread about the specific range it should process and the method of synchronization to be used. This information is passed as an argument to the calculate_sqrt_sum function, which is executed by each thread. Here's a breakdown of what arg[0], arg[1], and arg[2] represent:
+
+arg[0] (Start of Range for the Thread):
+This is the starting point of the range that the specific thread will process.
+In the code, it's set to a + i * range, where a is the start of the overall range, i is the thread index (from 0 to c-1), and range is the size of the range each thread will process. This calculation ensures that each thread gets a unique and consecutive portion of the total range to work on.
+arg[1] (End of Range for the Thread):
+This marks the end of the range for the thread.
+It's calculated as (i == c - 1) ? b : arg[0] + range - 1. This means that for all threads except the last one, the end of the range is the starting point plus the size of the range minus one. For the last thread (i == c - 1), the end of the range is b, the end of the overall range, to ensure that the entire range is covered even if it doesn't divide evenly.
+arg[2] (Method of Synchronization):
+This indicates which synchronization method should be used by the thread when updating the global sum of square roots.
+It can have a value of 1, 2, or 3, corresponding to the three methods described:
+Method 1 (d = 1): No synchronization. Threads update global_sqrt_sum concurrently.
+Method 2 (d = 2): Use a mutex to ensure only one thread updates global_sqrt_sum at a time.
+Method 3 (d = 3): Each thread calculates a local sum and then adds it to global_sqrt_sum using a mutex.
+Each thread receives a pointer to an array of these three values as its argument when it's created. The thread function calculate_sqrt_sum then uses these values to know which part of the range it should process and how it should handle synchronization when updating the global sum.
+
+
+
+
+
+In this loop, (line 52)
+ pthread_create is called c times 
+ (where c is the number of threads specified by the user). Each call to pthread_create starts a new thread, executing the calculate_sqrt_sum function.
+ The arguments to the function are passed as the fourth parameter of 
+ pthread_create, which in this case is arg, a pointer to an array containing the start and end of the range for each thread, as well as the method to be used for synchronization.
