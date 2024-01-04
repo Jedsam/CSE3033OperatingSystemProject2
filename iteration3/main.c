@@ -124,10 +124,10 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Joining the threads
+    // waiting the threads
     for (int i = 0; i < c; i++) {
         if(pthread_join(threads[i], NULL) != 0) {
-            perror("Failed to join thread");
+            perror("Failed to wait thread");
             return 1;
         }
     }
